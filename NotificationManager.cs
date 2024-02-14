@@ -1,4 +1,4 @@
-﻿using DataGridViewPractice;
+using DataGridViewPractice;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -29,23 +29,7 @@ namespace NotificationGenerator
             set
             {
                 notificationAlignment = value;
-
-                if(value == FromNotificationAlignment.RightDown)
-                {
-                    startX = screenWidth - notificationWidth - 50; startY = screenHeight - notificationHeight - 10; stepX = 0; stepY = - notificationHeight - 10;
-                }
-                else if(value == FromNotificationAlignment.RightUp)
-                {
-                    startX = screenWidth - notificationWidth - 50; startY = 10; stepX = 0; stepY = notificationHeight + 10;
-                }
-                else if(value == FromNotificationAlignment.LeftDown)
-                {
-                    startX = 10; startY = screenHeight - notificationHeight - 50; stepX = 0; stepY = -notificationHeight - 10;
-                }
-                else if(value == FromNotificationAlignment.LeftUp)
-                {
-                    startX = 50; startY = 50; stepX = 0; stepY = notificationHeight + 10;
-                }
+                InitialisePositions();
             }
         }
         public int NotificationScreenTime
@@ -69,6 +53,7 @@ namespace NotificationGenerator
 
             screenWidth = Screen.PrimaryScreen.Bounds.Width;
             screenHeight = Screen.PrimaryScreen.Bounds.Height;
+            remainingHeight = screenHeight;
 
             NotifyManagerTimer = new Timer();
             NotifyManagerTimer.Interval = 1000;
@@ -90,8 +75,10 @@ namespace NotificationGenerator
             }
         }
 
-        private int startX, startY, stepX, stepY;
+        private int startX, startY, stepX, stepY, prevX, prevY;
+        private int sX, sY;
         private int notificationWidth, notificationHeight;
+        private int remainingHeight;
         private int screenWidth, screenHeight;
         private int notificationScreenTime = 5;
         private FromNotificationAlignment notificationAlignment;
@@ -107,10 +94,15 @@ namespace NotificationGenerator
             newNotification.NotificationHeader = header;
             newNotification.ContentMessage = content;
             newNotification.NotificationTime = DateTime.Now;
+            newNotification.Size = newNotification.SetNotificationSize();
             newNotification.NotificationClosed += OnNotificationClosed;
             newNotification.TopMost = true;
-
-            if (startY <= 0 && (notificationAlignment == FromNotificationAlignment.LeftDown || notificationAlignment == FromNotificationAlignment.RightDown))
+            if(newNotification.isContentOutOfHeight)
+            {
+                newNotification.Size = new Size(400, 175);
+            }
+            
+            if ((prevY + (10 + newNotification.Height) * sY) <= 0 && (notificationAlignment == FromNotificationAlignment.LeftDown || notificationAlignment == FromNotificationAlignment.RightDown))
             {
                 NotificationQueue.Enqueue(newNotification);
             }
@@ -118,9 +110,17 @@ namespace NotificationGenerator
             {
                 NotificationQueue.Enqueue(newNotification);
             }
+            else if(NotificationQueue.Count>0)
+            {
+                NotificationQueue.Enqueue(newNotification);
+            }
             else
             {
-                newNotification.Location = new Point(startX, startY); startY += stepY; startX += stepX;
+                startX = prevX + (10 + newNotification.Width) * sX;
+                startY = prevY + (10 + newNotification.Height) * sY;
+                newNotification.Location = new Point(startX, startY); /*startY += stepY; startX += stepX;*/
+                prevX = startX; prevY = startY;
+                
                 newNotification.TickCount = 0;
                 NotificationOnScreenList.Add(newNotification);
                 newNotification.Show();
@@ -130,34 +130,66 @@ namespace NotificationGenerator
         private void OnNotificationClosed(object sender, EventArgs e)
         {
             int Iter = NotificationOnScreenList.Count - 1;
-
+            InitialisePositions();
             for (int ctr = 0; ctr < NotificationOnScreenList.Count; ctr++)
             {
                 if(NotificationOnScreenList[ctr] == (sender as NotificationTemplate))
                 {
                     Iter = ctr;
+                    break;
+                }
+                else
+                {
+                    prevX = NotificationOnScreenList[ctr].Location.X;
+                    prevY = NotificationOnScreenList[ctr].Location.Y;
                 }
             }
 
-            for (int ctr = NotificationOnScreenList.Count-1; ctr>=Iter+1; ctr--)
+            for (int ctr = Iter + 1; ctr < NotificationOnScreenList.Count; ctr++)
             {
-                NotificationOnScreenList[ctr].Location = NotificationOnScreenList[ctr-1].Location;
+                startX = prevX + (10 + NotificationOnScreenList[ctr].Width) * sX;
+                startY = prevY + (10 + NotificationOnScreenList[ctr].Height) * sY;
+                NotificationOnScreenList[ctr].Location = new Point(startX, startY);
+                prevX = startX;
+                prevY = startY;
             }
-            startY -= stepY; startX -= stepX;
+            NotificationOnScreenList.Remove(sender as NotificationTemplate);
 
-
-            if(NotificationQueue.Count>0)
+            while (NotificationQueue.Count>0 && (prevY + (10 + NotificationQueue.Peek().Height) * sY) > 0)
             {
                 NotificationTemplate newNotification  = NotificationQueue.Peek();
                 newNotification.TickCount = 0;
-                newNotification.Location = new Point(startX, startY); startY += stepY; startX += stepX;
+
+                startX = prevX + (10 + NotificationQueue.Peek().Width) * sX;
+                startY = prevY + (10 + NotificationQueue.Peek().Height) * sY;
+                newNotification.Location = new Point(startX, startY);
+                prevX = startX;
+                prevY = startY;
                 NotificationOnScreenList.Add(newNotification);
                 NotificationQueue.Dequeue();
                 newNotification.Show();
             }
 
-            NotificationOnScreenList.Remove(sender as NotificationTemplate);
+        }
 
+        private void InitialisePositions()
+        {
+            if (notificationAlignment == FromNotificationAlignment.RightDown)
+            {
+                prevX = screenWidth - notificationWidth - 10; prevY = screenHeight; stepX = 0; stepY = -notificationHeight - 10; sY = -1; sX = 0;
+            }
+            else if (notificationAlignment == FromNotificationAlignment.RightUp)
+            {
+                startX = screenWidth - notificationWidth - 50; startY = 10; stepX = 0; stepY = notificationHeight + 10;
+            }
+            else if (notificationAlignment == FromNotificationAlignment.LeftDown)
+            {
+                startX = 10; startY = screenHeight - notificationHeight - 50; stepX = 0; stepY = -notificationHeight - 10;
+            }
+            else if (notificationAlignment == FromNotificationAlignment.LeftUp)
+            {
+                startX = 50; startY = 50; stepX = 0; stepY = notificationHeight + 10;
+            }
         }
     }
 }
